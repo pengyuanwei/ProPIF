@@ -1,4 +1,4 @@
-# GUIDE
+# Robotic Acoustophoretic Manipulation
 
 # Installation:
 
