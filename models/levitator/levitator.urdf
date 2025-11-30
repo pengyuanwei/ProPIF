@@ -1,0 +1,31 @@
+<?xml version="1.0" ?>
+<robot name="levitator">
+
+    <link name="levitator_link">
+
+        <visual>
+            <origin rpy="0 0 0" xyz="0 0 0"/>
+            <geometry>
+                <mesh filename="levitator.STL" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+
+        <collision>
+            <origin rpy="0 0 0" xyz="0 0 0"/>
+            <geometry>
+                <mesh filename="levitator.STL" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </collision>
+
+        <inertial>
+            <origin rpy="0.0 0.0 0.2059549" xyz="-0.02720 0.02109 -0.02078"/>
+            <mass value="1.724"/>
+            <inertia 
+                ixx="0.00824611479" ixy="0.0" ixz="0.0"
+                iyy="0.01299121982" iyz="0.0"
+                izz="0.02011873617"/>
+        </inertial>
+
+    </link>
+
+</robot>

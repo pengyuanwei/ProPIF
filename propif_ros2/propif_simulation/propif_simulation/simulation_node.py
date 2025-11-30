@@ -24,9 +24,13 @@ class SimulationNode(Node):
         # Direct initialization instead of parameters
         self.robot_config = 'pandaconfig.json'
         self.flower_model = 'flower.obj'
+        # Change to your own config paths
+        self.robot_config_dir = "/home/pengyuan/projects/mobile-levitator/ProPIF"
+        self.models_config_dir = "/home/pengyuan/projects/mobile-levitator/ProPIF/models"
+
         self.simulation_rate = 100.0
         self.gui_enabled = True
-        self.camera_enabled = True
+        self.camera_enabled = False
 
         # Debug
         # self.planes_debug = []
@@ -34,7 +38,11 @@ class SimulationNode(Node):
         # self.point_cloud_ids = []
         
         self.load_robot()
-        self.load_flower()
+        # Load the levitator
+        levitator_position = [0., 0., 0.8]
+        levitator_orientation = [0., 0., 0.]
+        levitator_path = "levitator/levitator.urdf"
+        self.levitator_id = self.load_object(levitator_position, levitator_orientation, levitator_path, True)
         
         if self.camera_enabled:
             self.setup_camera()
@@ -45,15 +53,15 @@ class SimulationNode(Node):
         # Publisher for trajectory status notifications
         self.trajectory_status_pub = self.create_publisher(String, 'trajectory_status', 10)
         
-        # Create services
-        self.trajectory_service = self.create_service(
-            ExecuteJointTrajectory, 'execute_joint_trajectory', self.handle_joint_trajectory
-        )
-        self.robot_state_service = self.create_service(
-            GetRobotState, 'get_robot_state', self.handle_get_state
-        )
+        # # Create services
+        # self.trajectory_service = self.create_service(
+        #     ExecuteJointTrajectory, 'execute_joint_trajectory', self.handle_joint_trajectory
+        # )
+        # self.robot_state_service = self.create_service(
+        #     GetRobotState, 'get_robot_state', self.handle_get_state
+        # )
         
-        self.get_logger().info('Robot control services initialized')
+        # self.get_logger().info('Robot control services initialized')
         
         # Setup simulation timer
         sim_period = 1.0 / self.simulation_rate
@@ -84,17 +92,14 @@ class SimulationNode(Node):
             
             # Visualize the point cloud
             self.visualize_point_cloud(points, color=[0, 1, 0], point_size=4.0)
-            self.get_logger().info(f"Visualizing point cloud with {len(points)} points")
-            
+            self.get_logger().info(f"Visualizing point cloud with {len(points)} points")         
 
     def load_robot(self):
         try:
-            #! Change to your own robot config path
-            config_dir = "/home/pengyuan/projects/mobile-levitator/ProPIF"
-            self.get_logger().info(f'Loading robot config from: {os.path.join(config_dir, self.robot_config)}')
+            self.get_logger().info(f'Loading robot config from: {os.path.join(self.robot_config_dir, self.robot_config)}')
             self.sim_interface = pb.SimInterface(
                 self.robot_config, 
-                conf_file_path_ext=config_dir,
+                conf_file_path_ext=self.robot_config_dir,
                 use_gui=self.gui_enabled
             )
             self.robot_id = self.sim_interface.bot[0].bot_pybullet
@@ -109,38 +114,31 @@ class SimulationNode(Node):
             self.get_logger().error(f'Failed to load robot: {str(e)}')
             raise
 
-    def load_flower(self):
-        try:
-            #! Change to your own flower model path
-            config_dir = "/home/pengyuan/projects/mobile-levitator/ProPIF"
-            flower_path = os.path.join(config_dir, "models", "objects", self.flower_model)
+    def load_object(self, position, orientation, model_path, static=False):
+        try:            
+            for name, param in [("position", position), ("orientation", orientation)]:
+                if not isinstance(param, list):
+                    raise TypeError(f"load_object(): The input '{name}' must be a list")
+                if len(param) != 3:
+                    raise ValueError(f"load_object(): The length of input '{name}' must be 3")
+
+            object_path = os.path.join(self.models_config_dir, model_path)
+            self.get_logger().info(f'Loading URDF from: {object_path}')
             p_client = self.sim_interface.pybullet_client
-            flower_position = [1.0, 0.0, 0.05]
-            flower_orientation = p_client.getQuaternionFromEuler([1.57, 0, -1.37])
-            scale = 0.5
-            visual_shape_id = p_client.createVisualShape(
-                shapeType=p_client.GEOM_MESH,
-                fileName=flower_path,
-                meshScale=[scale, scale, scale]
+
+            object_id = p_client.loadURDF(
+                fileName=object_path,
+                basePosition=position,
+                baseOrientation=p_client.getQuaternionFromEuler(orientation),
+                useFixedBase=static
             )
-            collision_shape_id = p_client.createCollisionShape(
-                shapeType=p_client.GEOM_BOX,
-                halfExtents=[0.172, 0.385, 0.16]
-            )
-            self.flower_id = p_client.createMultiBody(
-                baseMass=0.0,
-                baseCollisionShapeIndex=collision_shape_id,
-                baseVisualShapeIndex=visual_shape_id,
-                basePosition=flower_position,
-                baseOrientation=flower_orientation
-            )
-            texture_path = os.path.join(config_dir, "models", "objects", "texture.png")
-            if os.path.exists(texture_path):
-                texture_id = p_client.loadTexture(texture_path)
-                p_client.changeVisualShape(self.flower_id, -1, textureUniqueId=texture_id)
-            self.get_logger().info('Flower model loaded successfully')
+
+            self.get_logger().info(f'The model {str(model_path)} loaded successfully')
+            return object_id
+        
         except Exception as e:
-            self.get_logger().error(f'Failed to load flower model: {str(e)}')
+            self.get_logger().error(f'{str(e)}: {str(model_path)}')
+            return None
 
     def setup_camera(self):
         try:
