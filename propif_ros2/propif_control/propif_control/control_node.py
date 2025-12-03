@@ -27,7 +27,7 @@ class ControlNode(Node):
     def __init__(self):
         super().__init__('control_node')
         #! Load configuration Change this to your own config path
-        self.curobo_robot_config = "/home/pengyuan/projects/mobile-levitator/ProPIF/configs/pandaconfig.yaml"
+        self.curobo_robot_config = "/home/pengyuan/projects/mobile-levitator/ProPIF/configs/levi_pandaconfig.yaml"
         self.control_frequency = 100
 
         # Initialize state variables
@@ -39,12 +39,8 @@ class ControlNode(Node):
         self.execution_index = 0
         self.execution_wait_start = None
         self.tensor_args = TensorDeviceType()
-
         # Directly initialize parameters
-        self.flower_position = [1.0, 0.0, 0.05]
-        self.swing_amplitude = 0.3     # Swing amplitude (m)
-        self.swing_period = 10.0        # Swing period (s)
-        self.detection_timeout = 20.0   # Patient detection timeout (s)
+        self.start_position = [0.4, 0, 0.3]
 
         # Trajectory Service Client
         self.trajectory_client = self.create_client(ExecuteJointTrajectory, 'execute_joint_trajectory')
@@ -127,27 +123,25 @@ class ControlNode(Node):
 
     def setup_motion_planner(self):
         try:
-            # create a cuboid object for the flower model
-            cuboid = Cuboid(
-                name="flower_box",
-                dims=[0.77, 0.77, 0.32],
-                pose=[1.0, 0.0, 0.05, 1.0, 0.0, 0.0, 0.0]
-            )
-            world_config = WorldConfig(cuboid=[cuboid])
+            world_config = {
+                "cuboid": {
+                    "table": {
+                        "dims": [1.0, 1.0, 0.2],  # x, y, z
+                        "pose": [3.0, 0.0, -0.1, 1, 0, 0, 0.0],  # x, y, z, qw, qx, qy, qz
+                    },
+                },
+            }
+            self.get_logger().info('111')
             config = MotionGenConfig.load_from_robot_config(
                 self.curobo_robot_config,
                 world_config,
-                self.tensor_args,
                 interpolation_dt=0.01,
-                collision_checker_type=CollisionCheckerType.PRIMITIVE,
-                use_cuda_graph=False,
-                self_collision_check=True,
-                num_ik_seeds=50,
-                num_trajopt_seeds=10,
-                evaluate_interpolated_trajectory=True
             )
+            self.get_logger().info('222')
             self.motion_planner = MotionGen(config)
-            self.motion_planner.warmup(enable_graph=False)
+            self.get_logger().info('333')
+            self.motion_planner.warmup()
+            self.get_logger().info('444')
 
             # Print initial end-effector pose using forward kinematics
             home_state = CuroboJointState.from_position(
@@ -194,58 +188,39 @@ class ControlNode(Node):
         if msg.data == "Trajectory execution finished":
             self.get_logger().info("Trajectory execution completed, ready to move to next point")
             self.trajectory_executing = False
-            
-            # If in detection phase, update to the next target point
-            if self.state == ControllerState.DETECTION:
-                self.waypoint_idx = (self.waypoint_idx + 1) % len(self.waypoints)
 
     def control_loop(self):
         robot_state = self.get_robot_state()
         if not robot_state:
+            self.get_logger().info('No robot state')
             return
         current_q = np.array(robot_state.joint_positions)
         current_time = self.get_clock().now().nanoseconds / 1e9
 
         if self.state == ControllerState.DETECTION:
-            if not hasattr(self, 'waypoint_idx'):
+            if not hasattr(self, 'last_plan_time'):
                 # Initialize detection phase fixed points
                 self.detection_start_time = current_time
                 self.last_plan_time = 0
-                self.waypoint_idx = 0
                 self.planning_in_progress = False
                 self.trajectory_executing = False
-
-                # Three fixed points: left, center, right
-                self.waypoints = [
-                    [0.45, 0 - self.swing_amplitude, 0.83],  # Left point
-                    [0.4, 0, 0.83],                         # Center point
-                    [0.45, 0 + self.swing_amplitude, 0.83],  # Right point
-                ]
                 
-                self.get_logger().info(f'Detection phase fixed points configured: {self.waypoints}')
+                self.get_logger().info(f'Detection phase - current joint positions: {current_q}')
+                self.get_logger().info(f'Start end position: {self.start_position}')
             
             # Check if new trajectory planning is needed (if not currently planning or executing)
             if not self.planning_in_progress and not self.trajectory_executing and current_time - self.last_plan_time >= 0.5:
                 self.last_plan_time = current_time
                 
-                # Get current target point
-                target_pos = self.waypoints[self.waypoint_idx]
-                
-                # Calculate direction toward the flower
-                look_at_point = self.flower_position
-                direction = np.array(look_at_point) - np.array(target_pos)
-                norm = np.linalg.norm(direction)
-                if norm < 1e-3:
-                    direction = np.array([1.0, 0.0, 0.0])
-                else:
-                    direction = direction / norm
+                # Define the start direction for the start position
+                direction = np.array([0.0, 0.0, -1.0])
                 
                 # Create rotation matrix and quaternion
                 R = self.compute_orientation_matrix(direction)
                 target_quat = self.rotation_to_quaternion(R)
                 
                 goal_pose = CuroboPose.from_list([
-                    target_pos[0], target_pos[1], target_pos[2],
+                    self.start_position[0], self.start_position[1], self.start_position[2],
                     target_quat[0], target_quat[1], target_quat[2], target_quat[3]
                 ])
                 
@@ -255,7 +230,7 @@ class ControlNode(Node):
                 )
                 
                 self.planning_in_progress = True
-                self.get_logger().info(f'Planning to fixed point {self.waypoint_idx+1}/3: {target_pos}')
+                self.get_logger().info(f'Planning to the start end position: {self.start_position}')
                 
                 result = self.motion_planner.plan_single(
                     start_state, goal_pose,
@@ -269,49 +244,124 @@ class ControlNode(Node):
                     trajectory = self.torch_to_np(traj.position)
                     self.send_trajectory(trajectory, 0.05)
                     self.trajectory_executing = True  # Mark trajectory as executing
-                    self.get_logger().info(f'Successfully planned to point {self.waypoint_idx+1}/3, target: {target_pos}')
-                    # Do not update waypoint_idx here - will be updated in trajectory_status_callback
+                    self.get_logger().info(f'Successfully planned to the start end position: {self.start_position}')
                 else:
-                    self.get_logger().warn(f'Planning to point {self.waypoint_idx+1}/3 failed: {result.status}')
-                    # Try next point
-                    self.waypoint_idx = (self.waypoint_idx + 1) % len(self.waypoints)
+                    self.get_logger().warn(f'Planning to the start end position failed: {result.status}')
+
+
+    # def control_loop(self):
+    #     robot_state = self.get_robot_state()
+    #     if not robot_state:
+    #         return
+    #     current_q = np.array(robot_state.joint_positions)
+    #     current_time = self.get_clock().now().nanoseconds / 1e9
+
+    #     if self.state == ControllerState.DETECTION:
+    #         if not hasattr(self, 'waypoint_idx'):
+    #             # Initialize detection phase fixed points
+    #             self.detection_start_time = current_time
+    #             self.last_plan_time = 0
+    #             self.waypoint_idx = 0
+    #             self.planning_in_progress = False
+    #             self.trajectory_executing = False
+
+    #             # Three fixed points: left, center, right
+    #             self.waypoints = [
+    #                 [0.45, 0 - self.swing_amplitude, 0.83],  # Left point
+    #                 [0.4, 0, 0.83],                         # Center point
+    #                 [0.45, 0 + self.swing_amplitude, 0.83],  # Right point
+    #             ]
+                
+    #             self.get_logger().info(f'Detection phase fixed points configured: {self.waypoints}')
             
-            # Detection timeout check
-            if self.last_detection_time and (current_time - self.last_detection_time) > self.detection_timeout:
-                self.get_logger().info("Detection timeout reached, switching to EXECUTION phase")
-                self.state = ControllerState.EXECUTION
-                self.execution_index = 0
-                self.execution_wait_start = None
+    #         # Check if new trajectory planning is needed (if not currently planning or executing)
+    #         if not self.planning_in_progress and not self.trajectory_executing and current_time - self.last_plan_time >= 0.5:
+    #             self.last_plan_time = current_time
+                
+    #             # Get current target point
+    #             target_pos = self.waypoints[self.waypoint_idx]
+                
+    #             # Calculate direction toward the flower
+    #             look_at_point = self.flower_position
+    #             direction = np.array(look_at_point) - np.array(target_pos)
+    #             norm = np.linalg.norm(direction)
+    #             if norm < 1e-3:
+    #                 direction = np.array([1.0, 0.0, 0.0])
+    #             else:
+    #                 direction = direction / norm
+                
+    #             # Create rotation matrix and quaternion
+    #             R = self.compute_orientation_matrix(direction)
+    #             target_quat = self.rotation_to_quaternion(R)
+                
+    #             goal_pose = CuroboPose.from_list([
+    #                 target_pos[0], target_pos[1], target_pos[2],
+    #                 target_quat[0], target_quat[1], target_quat[2], target_quat[3]
+    #             ])
+                
+    #             start_state = CuroboJointState.from_position(
+    #                 self.np_to_torch_tensor(current_q.reshape(1, -1)),
+    #                 joint_names=self.joint_names
+    #             )
+                
+    #             self.planning_in_progress = True
+    #             self.get_logger().info(f'Planning to fixed point {self.waypoint_idx+1}/3: {target_pos}')
+                
+    #             result = self.motion_planner.plan_single(
+    #                 start_state, goal_pose,
+    #                 MotionGenPlanConfig(max_attempts=10)
+    #             )
+                
+    #             self.planning_in_progress = False
+                
+    #             if result.success:
+    #                 traj = result.get_interpolated_plan()
+    #                 trajectory = self.torch_to_np(traj.position)
+    #                 self.send_trajectory(trajectory, 0.05)
+    #                 self.trajectory_executing = True  # Mark trajectory as executing
+    #                 self.get_logger().info(f'Successfully planned to point {self.waypoint_idx+1}/3, target: {target_pos}')
+    #                 # Do not update waypoint_idx here - will be updated in trajectory_status_callback
+    #             else:
+    #                 self.get_logger().warn(f'Planning to point {self.waypoint_idx+1}/3 failed: {result.status}')
+    #                 # Try next point
+    #                 self.waypoint_idx = (self.waypoint_idx + 1) % len(self.waypoints)
+            
+    #         # Detection timeout check
+    #         if self.last_detection_time and (current_time - self.last_detection_time) > self.detection_timeout:
+    #             self.get_logger().info("Detection timeout reached, switching to EXECUTION phase")
+    #             self.state = ControllerState.EXECUTION
+    #             self.execution_index = 0
+    #             self.execution_wait_start = None
 
-        elif self.state == ControllerState.EXECUTION:
-            if self.execution_index < len(self.detected_planes):
-                if self.execution_wait_start is None:
-                    self.current_plane = self.detected_planes[self.execution_index]
-                    success = self.plan_path_to_target()
-                    if success:
-                        self.execution_wait_start = current_time
-                    else:
-                        self.get_logger().warn("Planning failed for target, skipping")
-                        self.execution_index += 1
-                else:
-                    # Interact with the target plane for 2 seconds
-                    if (current_time - self.execution_wait_start) >= 2.0:
-                        self.execution_wait_start = None
-                        self.execution_index += 1
-            else:
-                self.get_logger().info("All targets executed, switching to RETURN_HOME phase")
-                self.state = ControllerState.RETURN_HOME
+    #     elif self.state == ControllerState.EXECUTION:
+    #         if self.execution_index < len(self.detected_planes):
+    #             if self.execution_wait_start is None:
+    #                 self.current_plane = self.detected_planes[self.execution_index]
+    #                 success = self.plan_path_to_target()
+    #                 if success:
+    #                     self.execution_wait_start = current_time
+    #                 else:
+    #                     self.get_logger().warn("Planning failed for target, skipping")
+    #                     self.execution_index += 1
+    #             else:
+    #                 # Interact with the target plane for 2 seconds
+    #                 if (current_time - self.execution_wait_start) >= 2.0:
+    #                     self.execution_wait_start = None
+    #                     self.execution_index += 1
+    #         else:
+    #             self.get_logger().info("All targets executed, switching to RETURN_HOME phase")
+    #             self.state = ControllerState.RETURN_HOME
 
-        elif self.state == ControllerState.RETURN_HOME:
-            home_q = np.array(self.home_joint_angles)
-            traj = np.array([home_q])
-            self.send_trajectory(traj, 1.0)
-            self.get_logger().info("Returning home, task complete")
-            self.state = ControllerState.IDLE
-            self.publish_status("Returned to home, task complete")
+    #     elif self.state == ControllerState.RETURN_HOME:
+    #         home_q = np.array(self.home_joint_angles)
+    #         traj = np.array([home_q])
+    #         self.send_trajectory(traj, 1.0)
+    #         self.get_logger().info("Returning home, task complete")
+    #         self.state = ControllerState.IDLE
+    #         self.publish_status("Returned to home, task complete")
 
-        elif self.state == ControllerState.IDLE:
-            self.hold_position(current_q)
+    #     elif self.state == ControllerState.IDLE:
+    #         self.hold_position(current_q)
 
     def plan_path_to_target(self):
         if not self.current_plane or not self.motion_planner:

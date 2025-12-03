@@ -24,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'control_node = propif_control.control_node:main',
+            'test_motion_planner_V2 = propif_control.test_V1:main',
         ],
     },
 )

@@ -205,52 +205,38 @@
   </joint> 
   <!-- }} arm -->
   <!-- gripper {{ -->
-  <!--
   <material name="black">
     <color rgba="0.2 0.2 0.2 1"/>
   </material>
-  <material name="green">
-    <color rgba="0.1 0.9 0.1 1"/>
-  </material>
-  <joint name="panda_suction_gripper_joint" type="fixed">
-    <parent link="panda_link8"/>
-    <child link="panda_suction_gripper"/>
-    <origin rpy="3.141592653589793 0 -0.7853981633974483" xyz="0 0 0.0065"/>
-  </joint>
-  <link name="panda_suction_gripper">
+  <link name="levitator">
     <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/models/panda_description/meshes/visual/suction_mount.stl"/>
+        <mesh filename="/models/levitator/levitator.STL" scale="0.001 0.001 0.001"/>
       </geometry>
       <material name="black"/>
     </visual>
     <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <box size="0.168 0.137 0.047"/>
+        <mesh filename="/models/levitator/levitator.STL" scale="0.001 0.001 0.001"/>
       </geometry>
-      <origin xyz="0.0155 0 -0.005"/>
     </collision>
+    <inertial>
+      <origin rpy="0.0 0.0 0.2059549" xyz="-0.02720 0.02109 -0.02078"/>
+      <mass value="1.724"/>
+      <inertia 
+        ixx="0.00824611479" ixy="0.0" ixz="0.0"
+        iyy="0.01299121982" iyz="0.0"
+        izz="0.02011873617"/>
+    </inertial>
   </link>
-  <link name="panda_suction_cup">
-    <visual>
-      <geometry> 
-        <mesh filename="/models/panda_description/meshes/visual/suction_cup.stl"/>
-      </geometry>
-      <material name="green"/>
-    </visual>
-    <collision>
-      <geometry>
-        <box size="0.0502 0.0502 0.0671"/>
-      </geometry>
-      <origin xyz="0 0 -0.0314"/>
-    </collision>
-  </link>
-  <joint name="panda_suction_mount_to_cup_joint" type="fixed">
-    <parent link="panda_suction_gripper"/>
-    <child link="panda_suction_cup"/>
-    <origin rpy="3.141592653589793 0 0" xyz="0.072 0 -0.069494"/>
+  <joint name="levitator_joint" type="fixed">
+    <parent link="panda_link8"/>
+    <child link="levitator"/>
+    <origin rpy="-1.5707963267948966 0 -2.356194490192344" xyz="0.0376181 -0.0376181 0.1358"/>
   </joint>
-  }} gripper -->
+  <!-- }} gripper -->
   
 </robot>
 

@@ -37,12 +37,13 @@ class SimulationNode(Node):
         # self.create_subscription(PlaneInfo, '/detected_planes', self.plane_info_callback, 10)
         # self.point_cloud_ids = []
         
-        self.load_robot()
         # Load the levitator
-        levitator_position = [0., 0., 0.8]
-        levitator_orientation = [0., 0., 0.]
-        levitator_path = "levitator/levitator.urdf"
-        self.levitator_id = self.load_object(levitator_position, levitator_orientation, levitator_path, True)
+        # levitator_position = [-1., 0., 0.8]
+        # levitator_orientation = [0., 0., 0.]
+        # levitator_path = "levitator/levitator.urdf"
+        # self.levitator_id = self.load_object(levitator_position, levitator_orientation, levitator_path, True)
+
+        self.load_robot()
         
         if self.camera_enabled:
             self.setup_camera()
@@ -53,15 +54,15 @@ class SimulationNode(Node):
         # Publisher for trajectory status notifications
         self.trajectory_status_pub = self.create_publisher(String, 'trajectory_status', 10)
         
-        # # Create services
-        # self.trajectory_service = self.create_service(
-        #     ExecuteJointTrajectory, 'execute_joint_trajectory', self.handle_joint_trajectory
-        # )
-        # self.robot_state_service = self.create_service(
-        #     GetRobotState, 'get_robot_state', self.handle_get_state
-        # )
+        # Create services
+        self.trajectory_service = self.create_service(
+            ExecuteJointTrajectory, 'execute_joint_trajectory', self.handle_joint_trajectory
+        )
+        self.robot_state_service = self.create_service(
+            GetRobotState, 'get_robot_state', self.handle_get_state
+        )
         
-        # self.get_logger().info('Robot control services initialized')
+        self.get_logger().info('Robot control services initialized')
         
         # Setup simulation timer
         sim_period = 1.0 / self.simulation_rate
@@ -104,7 +105,9 @@ class SimulationNode(Node):
             )
             self.robot_id = self.sim_interface.bot[0].bot_pybullet
             self.initial_joint_positions = self.sim_interface.bot[0].init_joint_angles
+            self.get_logger().info(f'The initial joint angles: {self.initial_joint_positions}')
             self.num_joints = self.sim_interface.bot[0].num_motors
+            self.get_logger().info(f'The number of joints (motors): {self.num_joints}')
             if not hasattr(self, 'robot_id') or self.robot_id is None:
                 raise ValueError("Robot ID not properly initialized")
             if not hasattr(self, 'num_joints') or self.num_joints <= 0:
