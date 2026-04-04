@@ -50,9 +50,9 @@ cd simulation_and_control
 pip install .
 ```
 
-# Execute
+# Pre-Execution
 
-After installing all the dependencies above, we can start executing the project.
+After installing all the dependencies above, you need to perform a one-time environment setup before running the project. This setup is only required once unless the environment is changed or rebuilt.
 
 Reinstall all colcon-related packages and rebuild colcon.
 
@@ -65,6 +65,8 @@ rm -rf build/ install/ log/
 colcon build --symlink-install
 source install/setup.bash
 ```
+
+# Execution
 
 We provide a launch file for you to launch control node, perception node and simulation node together.
 
