@@ -57,7 +57,7 @@ After installing all the dependencies above, we can start executing the project.
 Reinstall all colcon-related packages and rebuild colcon.
 
 ```
-mamba activate propif_ros2
+mamba activate propif_ros2  # conda activate is the same
 for pkg in $(mamba list | grep colcon | awk '{print $1}'); do mamba remove -y $pkg; done
 mamba install colcon-common-extensions  # if it fails, use pip
 cd YOUR_PATH/ProPIF/propif_ros2
